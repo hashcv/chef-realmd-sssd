@@ -1,8 +1,8 @@
 #
-# Cookbook Name:: sssd
+# Cookbook Name:: realmd-sssd
 # Recipe:: default
 #
-# Copyright (C) 2015 Localytics
+# Copyright (C) 2016 John Bartko
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,76 +17,73 @@
 # limitations under the License.
 #
 
-if node['sssd']['directory_name'].nil?
-  Chef::Application.fatal!("You must set the directory name!")
+chef_gem 'deep_merge' do
+  compile_time true if respond_to?(:compile_time)
 end
 
-if node['sssd']['computer_name'].nil?
-  # We must limit the computer name to 15 characters, to avoid truncating:
-  #   https://bugs.freedesktop.org/show_bug.cgi?id=69016
-  computer_name = node['fqdn'][0..14]
-else
-  computer_name = node['sssd']['computer_name']
-end
-
-case node['platform']
-when 'ubuntu'
+case node['platform_family']
+when 'debian'
   include_recipe 'apt'
-when 'centos'
+when 'rhel'
   include_recipe 'yum'
-  include_recipe 'yum-epel'
 end
 
-node['sssd']['packages'].each do |pkg|
-  package(pkg)
+node['realmd-sssd']['packages'].each do |pkg|
+  package pkg
 end
 
-if node['sssd']['join_domain'] == true
-  # We enforce encrypted data bag here because mostly anything else (environment attribute?) is scary
+if node['realmd-sssd']['join']
+  require 'deep_merge'
+  include_recipe 'chef-vault'
+  include_recipe 'openssh'
   begin
-    realm_databag_contents = Chef::EncryptedDataBagItem.load(node['sssd']['realm']['databag'],node['sssd']['realm']['databag_item'])
-  rescue
-    Chef::Application.fatal!("Unable to access the encrypted data bag for domain credentials, ensure encrypted_data_bag_secret is available!")
+    realm_info = chef_vault_item(node['realmd-sssd']['vault-name'],
+                                 node['realmd-sssd']['vault-item'])
+  rescue Exception => e
+    Chef::Application.fatal!(e.to_s)
   end
-  
-  # The ideal here (and future PR) is "realm join", but for now, we use adcli due to:
-  #   CentOS 6: realm is only available in RHEL/CentOS 7
-  #   Ubuntu 14.04: due to necessary hacky work-arounds to this bug: https://bugs.launchpad.net/ubuntu/+source/realmd/+bug/1333694
-  bash 'join_domain' do
-    user 'root'
-    code <<-EOF
-    /usr/bin/expect -c 'spawn adcli join --host-fqdn #{computer_name} -U #{realm_databag_contents['username']} #{node['sssd']['directory_name']}
-    expect "Password for #{realm_databag_contents['username']}: "
-    send "#{realm_databag_contents['password']}\r"
-    expect eof'
-    EOF
-    not_if "klist -k | grep -i '@#{node['sssd']['directory_name']}'"
-  end
+
+  merged_config = Chef::Mixin::DeepMerge.merge({
+    '[sssd]' => { 'domains' => [ realm_info['realm'] ]},
+    "[domain/#{realm_info['realm']}]" => {
+      'ad_domain' => [ realm_info['realm'] ],
+      'krb5_realm' => [ realm_info['realm'].upcase ],
+      'realmd_tags' => [ 'manages-system joined-with-samba'],
+      'cache_credentials' => [ 'True' ],
+      'id_provider' => [ 'ad' ],
+      'krb5_store_password_if_offline' => [ 'True' ],
+      'default_shell' => [ '/bin/bash' ],
+      'ldap_id_mapping' => [ 'True' ],
+      'use_fully_qualified_names' => [ 'True' ],
+      'fallback_homedir' => [ '/home/%d/%u' ],
+      'access_provider' => [ 'ad' ]
+  }}.deep_merge!(node['realmd-sssd']['extra-config']), node['realmd-sssd']['config'])
+else
+  merged_config = Chef::Mixin::DeepMerge.deep_merge!(node['realmd-sssd']['extra-config'], node['realmd-sssd']['config'])
 end
 
-case node['platform']
-when 'ubuntu'
-  template '/usr/share/pam-configs/my_mkhomedir' do
-    source 'my_mkhomedir.erb'
-    owner 'root'
-    group 'root'
-    mode '0644'
-    notifies :run, "execute[pam-auth-update]"
+if node['realmd-sssd']['join']
+  bash "join #{realm_info['realm']} realm" do
+    user 'root'
+    code <<-EOT.gsub(/^\s+/, '').sub(/\n$/, '')
+    echo '#{realm_info['password']}' | realm join -v --unattended #{"--computer-ou '#{realm_info['computer-ou']}'" unless realm_info['computer-ou'].empty?} -U #{realm_info['username']} #{realm_info['realm']}
+    EOT
+    not_if "klist -k | grep -qi '@#{realm_info['realm']}'"
   end
 
-  # Enable automatic home directory creation
-  execute 'pam-auth-update' do
-    command 'pam-auth-update --package'
-    action :nothing
-  end
-when 'centos'
-  bash 'enable_sssd' do
-    user 'root'
-    code <<-EOF
-    authconfig --enablemkhomedir --enablesssd --enablesssdauth --update
-    echo 'sudoers:    files sss' >> /etc/nsswitch.conf
-    EOF
-    not_if "grep -i 'sudoers:    files sss' /etc/nsswitch.conf"
+  if node['platform_family'] == 'debian'
+    template '/usr/share/pam-configs/mkhomedir' do
+      source 'mkhomedir.erb'
+      owner 'root'
+      group 'root'
+      mode '0644'
+      notifies :run, "execute[pam-auth-update]"
+    end
+
+    execute 'pam-auth-update' do
+      command 'pam-auth-update --package'
+      action :nothing
+    end
   end
 end
 
@@ -95,15 +92,15 @@ template '/etc/sssd/sssd.conf' do
   owner 'root'
   group 'root'
   mode '0600'
-  notifies :restart, 'service[sssd]', :immediately if node['sssd']['join_domain'] == true
   variables({
-    :domain => node['sssd']['directory_name'],
-    :realm => node['sssd']['directory_name'].upcase,
-    :enumerate => node['sssd']['enumerate']
+    :config => merged_config
   })
+  notifies :restart, 'service[sssd]', :immediate
 end
 
 service 'sssd' do
-  supports :status => true, :restart => true, :reload => true
-  action [:enable]
+  supports :status => true, :restart => true
+  action [:enable, :start]
 end
+
+# vim: set ts=2 sw=2 et ft=ruby:

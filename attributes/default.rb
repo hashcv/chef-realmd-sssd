@@ -1,19 +1,57 @@
-case node['platform']
-when 'ubuntu'
-  default['sssd']['packages'] = %w(expect sssd sssd-ad sssd-ad-common sssd-tools adcli krb5-user)
-when 'centos'
-  default['sssd']['packages'] = %w(expect sssd sssd-ad sssd-common sssd-tools adcli authconfig krb5-workstation)
+#
+
+default['realmd-sssd']['join'] = false
+default['realmd-sssd']['host-spn'] = node.attribute?('fqdn') ? node['fqdn'] : node['machinename']
+
+case node['platform_family']
+when 'debian'
+  default['realmd-sssd']['debian-mkhomedir-umask'] = '0022'
+  default['realmd-sssd']['packages'] = [ 'realmd', 'sssd', 'krb5-user' ]
+when 'rhel'
+  default['realmd-sssd']['packages'] = [ 'realmd', 'sssd', 'krb5-workstation' ]
 end
 
-default['sssd']['join_domain'] = true
-default['sssd']['enumerate'] = false
-default['sssd']['computer_name'] = nil
-default['sssd']['directory_name'] = nil
+default['realmd-sssd']['password-auth'] = false
+default['realmd-sssd']['net-password-auth']['enable'] = false
+default['realmd-sssd']['net-password-auth']['cidr'] = []
 
-# {
-#   "id": "realm",
-#   "username": "administrator",
-#   "password": "password"
-# }
-default['sssd']['realm']['databag'] = 'sssd_credentials'
-default['sssd']['realm']['databag_item'] = 'realm'
+if node['realmd-sssd']['password-auth']
+  force_default['openssh']['server']['password_authentication'] = 'yes'
+elsif node['realmd-sssd']['net-password-auth']['enable']
+  match = {}
+  node['realmd-sssd']['net-password-auth']['cidr'].each do |network|
+    match.merge!({"Address #{network}" => {'password_authentication' => 'yes'}})
+  end
+  force_default['openssh']['server']['match'] = match
+end
+
+default['realmd-sssd']['config'] = {
+  '[sssd]' => {
+    'config_file_version' => ['2'],
+    'services'=> ['nss', 'pam', 'ssh', 'sudo'],
+    'domains' => ['LOCAL']
+  },
+  '[nss]' => {
+    'filter_users' => ['root', 'named', 'avahi', 'haldaemon', 'dbus', 'radiusd', 'news', 'nscd', 'centos', 'ubuntu']
+  },
+  '[pam]' => {},
+  '[ssh]' => {},
+  '[sudo]' => {},
+  '[domain/LOCAL]' => {
+    'enumerate' => ['true'],
+    'min_id' => ['500'],
+    'max_id' => ['999'],
+    'id_provider' => ['local'],
+    'auth_provider' => ['local']
+  }
+}
+default['realmd-sssd']['extra-config'] = {}
+
+# databag/vault-name
+# id: vault-item
+# computer-ou:
+# password:
+# realm:
+# username:
+default['realmd-sssd']['vault-name'] = 'realmd-sssd'
+default['realmd-sssd']['vault-item'] = 'realm'

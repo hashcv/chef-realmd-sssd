@@ -1,31 +1,6 @@
-[sssd]
-config_file_version = 2
-services = nss, pam, ssh, sudo
-domains = <%= @domain %>
-
-[nss]
-filter_users = root,named,avahi,haldaemon,dbus,radiusd,news,nscd,centos,ubuntu
-
-[pam]
-
-[ssh]
-
-[sudo]
-
-[domain/<%= @domain %>]
-<% if @enumerate %>
-enumerate = true
+<% @config.sort_by{|k,v| k}.to_h.each do |section, section_contents| -%>
+<%= "#{section}\n" unless section_contents.empty? -%>
+<%   section_contents.sort_by{|k,v| k}.to_h.each do |directive, directive_values| -%>
+<%= directive %> = <%= directive_values.is_a?(String) ? directive_values : directive_values.join(', ') %>
+<%   end %>
 <% end %>
-
-id_provider = ad
-access_provider = ad
-
-ad_domain = <%= @domain %>
-krb5_realm = <%= @realm %>
-cache_credentials = True
-krb5_store_password_if_offline = True
-default_shell = /bin/bash
-ldap_id_mapping = True
-fallback_homedir = /home/%u
-
-ldap_user_ssh_public_key = sshPublicKey
