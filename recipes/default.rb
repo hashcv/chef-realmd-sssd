@@ -66,7 +66,7 @@ if node['realmd-sssd']['join']
   bash "join #{realm_info['realm']} realm" do
     user 'root'
     code <<-EOT.gsub(/^\s+/, '').sub(/\n$/, '')
-    echo '#{realm_info['password']}' | realm join -v --unattended #{"--computer-ou '#{realm_info['computer-ou']}'" unless realm_info['computer-ou'].empty?} -U #{realm_info['username']} #{realm_info['realm']}
+    echo '#{realm_info['password']}' | realm join -v --unattended #{"--user-principal 'HOST/#{node['realmd-sssd']['host-spn']}'" unless node['realmd-sssd']['host-spn'].empty?} #{"--computer-ou '#{realm_info['computer-ou']}'" unless realm_info['computer-ou'].empty?} -U #{realm_info['username']} #{realm_info['realm']}
     EOT
     not_if "klist -k | grep -qi '@#{realm_info['realm']}'"
   end
