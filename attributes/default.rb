@@ -1,27 +1,44 @@
-#
-
 default['realmd-sssd']['join'] = false
 default['realmd-sssd']['host-spn'] = node.attribute?('fqdn') ? node['fqdn'] : node['machinename']
 
+default['realmd-sssd']['packages'] = [ 'realmd', 'sssd' ]
 case node['platform_family']
 when 'debian'
   default['realmd-sssd']['debian-mkhomedir-umask'] = '0022'
-  default['realmd-sssd']['packages'] = [ 'realmd', 'sssd', 'krb5-user' ]
+  default['realmd-sssd']['packages'].push('krb5-user')
+  if platform?('ubuntu')
+    default['realmd-sssd']['packages'].push('packagekit')
+  end
 when 'rhel'
-  default['realmd-sssd']['packages'] = [ 'realmd', 'sssd', 'krb5-workstation' ]
+  default['realmd-sssd']['packages'].push('krb5-workstation')
+when 'fedora'
+  default['realmd-sssd']['packages'].
+    push(['krb5-workstation', 'polkit', 'PackageKit', 'crypto-policies >= 20151104']).
+    flatten!
 end
 
 default['realmd-sssd']['password-auth'] = false
-default['realmd-sssd']['net-password-auth']['enable'] = false
-default['realmd-sssd']['net-password-auth']['cidr'] = []
+default['realmd-sssd']['ldap-key-auth']['enable'] = false
+default['realmd-sssd']['ldap-key-auth']['cidr'] = []
 
 if node['realmd-sssd']['password-auth']
   force_default['openssh']['server']['password_authentication'] = 'yes'
-elsif node['realmd-sssd']['net-password-auth']['enable']
+elsif node['realmd-sssd']['ldap-key-auth']['enable']
   match = {}
-  node['realmd-sssd']['net-password-auth']['cidr'].each do |network|
-    match.merge!({"Address #{network}" => {'password_authentication' => 'yes'}})
+  node['realmd-sssd']['ldap-key-auth']['cidr'].each do |network|
+    match.merge!({
+      "Address #{network}" => {
+        'password_authentication' => 'yes',
+        'AuthorizedKeysCommand' => '/usr/bin/sss_ssh_authorizedkeys',
+	'AuthorizedKeysCommandUser' => 'nobody'
+      }
+    })
   end
+  match.merge!({
+    "Address *,#{node['realmd-sssd']['ldap-key-auth']['cidr'].
+      map { |whitelist| "!#{whitelist}" }.
+      join(',')}" => { 'password_authentication' => 'no' }
+  })
   force_default['openssh']['server']['match'] = match
 end
 
@@ -32,7 +49,8 @@ default['realmd-sssd']['config'] = {
     'domains' => ['LOCAL']
   },
   '[nss]' => {
-    'filter_users' => ['root', 'named', 'avahi', 'haldaemon', 'dbus', 'radiusd', 'news', 'nscd', 'centos', 'ubuntu']
+    'filter_users' => ['root', 'named', 'avahi', 'haldaemon', 'dbus',
+                       'radiusd', 'news', 'nscd', 'centos', 'ubuntu']
   },
   '[pam]' => {},
   '[ssh]' => {},

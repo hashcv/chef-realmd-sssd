@@ -1,4 +1,6 @@
-chef_gem 'activesupport'
+chef_gem 'activesupport' do
+  compile_time false if respond_to?(:compile_time)
+end
 
 require 'pathname'
 require 'active_support/core_ext/hash/deep_merge'
@@ -18,7 +20,7 @@ ruby_block "dump_node_attributes" do
   block do
     require 'json'
 
-    attrs = {}
+    attrs = { 'ipaddress' => node['ipaddress'] }
 
     attrs = attrs.deep_merge(node.default_attrs) unless node.default_attrs.empty?
     attrs = attrs.deep_merge(node.normal_attrs) unless node.normal_attrs.empty?

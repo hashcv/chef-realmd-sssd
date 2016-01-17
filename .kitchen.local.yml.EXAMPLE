@@ -1,23 +1,55 @@
-# Set the following for your environment, be sure you can access Simple AD (VPN? kitchen-ec2 driver?),
-#   create the appropriate solo databags, and copy this to .kitchen.local.yml.
+# Specify at least one nameserver for the realm being tested against. If SUTs
+# are to register dynamic DNS resource records under a subdomain other than the
+# realm name, define an  optional dns_domain_name. All other realm information
+# will be sourced from the solo data bag.
 #
-# We need dhclient-helper for CentOS only due to:
-#   https://www.centos.org/forums/viewtopic.php?t=24741
-# We need resolver cookbooks to setup appropriate DNS resolution for joining the domain
+# Be sure SUTs can access DNS, LDAP, and Kerberos services.
+
+<%
+require 'json'
+realm_info = ::JSON.parse(File.read("test/integration/with-registration/data_bags/realmd-sssd/realm.json"))
+# Setting a host SPN for a DNS domain name other than the realm name
+# dns_domain_name = 'dev.example.org'
+dns_domain_name = nil
+%>
+---
+platforms:
+  - name: centos-7.2
+    driver_config:
+      vm_hostname: "sssd-centos7.<%= dns_domain_name || realm_info['realm'] %>"
+  - name: debian-8.2
+    driver_config:
+      vm_hostname: "sssd-debian8.<%= dns_domain_name || realm_info['realm'] %>"
+  - name: fedora-23
+    driver_config:
+      vm_hostname: "sssd-fc23.<%= dns_domain_name || realm_info['realm'] %>"
+  - name: ubuntu-14.04
+    driver_config:
+      vm_hostname: "sssd-ubuntu14.<%= dns_domain_name || realm_info['realm'] %>"
+
 suites:
   - name: with-registration
     run_list:
-      - recipe[test-helper::dhclient]
-      - recipe[resolver::default]
-      - recipe[sssd::default]
+      - recipe[resolver]
+      - recipe[realmd-sssd]
+      - recipe[test-helper::realm-integration]
       - recipe[test-helper::serverspec]
     attributes:
-      set_fqdn: '*.example.com'
       resolver:
         nameservers:
-          - 198.51.100.10
-          - 203.0.113.20
-        search: 'example.com'
-      sssd:
-        directory_name: 'ldap.example.com'
-        test_user: 'Guest'
+          - 192.0.2.10
+        search: "<%= realm_info['realm'] %>"
+      realmd-sssd:
+        join: 'true'
+        extra-config:
+          "[domain/<%= realm_info['realm'] %>]":
+            realmd_tags: [ 'Test Kitchen system under test' ]
+            fallback_homedir: '/home/%d/%u'
+            ldap_sasl_mech: 'GSSAPI'
+            ldap_sudo_search_base: 'OU=Sudoers,DC=example,DC=org'
+            ldap_user_extra_attrs: 'altSecurityIdentities:altSecurityIdentities'
+            ldap_user_ssh_public_key: 'altSecurityIdentities'
+            sudo_provider: 'ldap'
+        ldap-key-auth:
+          enable: true
+          cidr: [ '::1/128', '10.0.2.2/32' ]
