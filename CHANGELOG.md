@@ -1,3 +1,7 @@
+# feature/supports-platforms
+
+- add supported platforms to metadata
+
 # 0.2.0
 
 - serverspec integration tests leverage solo data bag contents
