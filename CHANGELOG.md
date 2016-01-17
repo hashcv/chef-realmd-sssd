@@ -1,3 +1,7 @@
+# 0.2.2
+
+- fix supported platform versions in metadata
+
 # 0.2.1
 
 - add supported platforms to metadata
