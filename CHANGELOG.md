@@ -1,4 +1,4 @@
-# feature/supports-platforms
+# 0.2.1
 
 - add supported platforms to metadata
 
