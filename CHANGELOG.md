@@ -1,4 +1,4 @@
-# feature/kitchen-fix
+# 0.2.0
 
 - serverspec integration tests leverage solo data bag contents
 - 7 new serverspec resources, 14 new matchers
