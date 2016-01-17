@@ -1,5 +1,6 @@
+---
 driver:
-  name: vagrant
+  name: <%= ENV['KITCHEN_DRIVER'] || 'vagrant' %>
 
 provisioner:
   name: chef_zero
@@ -7,14 +8,12 @@ provisioner:
 platforms:
   - name: centos-7.2
   - name: debian-8.2
+  - name: fedora-23
+  - name: ubuntu-14.04
 
 # For testing joining the domain, see .kitchen.local.yml.EXAMPLE
 suites:
   - name: default
     run_list:
-      - recipe[sssd::default]
+      - recipe[realmd-sssd]
       - recipe[test-helper::serverspec]
-    attributes:
-      sssd:
-        directory_name: 'ldap.example.com'
-        join_domain: false

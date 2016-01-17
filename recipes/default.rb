@@ -24,12 +24,28 @@ end
 case node['platform_family']
 when 'debian'
   include_recipe 'apt'
+  # aptd/packagekit installs samba, but no Debian packages have the private dir
+  directory '/var/lib/samba' do
+    owner 'root'
+    group 'root'
+    mode '0755'
+  end
+  directory '/var/lib/samba/private' do
+    owner 'root'
+    group 'root'
+    mode '0700'
+  end
+when 'fedora'
+  include_recipe 'yum'
+  include_recipe 'yum::dnf_yum_compat'
 when 'rhel'
   include_recipe 'yum'
 end
 
 node['realmd-sssd']['packages'].each do |pkg|
-  package pkg
+  package pkg do
+    provider Chef::Provider::Package::Yum if node.platform_family?('fedora')
+  end
 end
 
 if node['realmd-sssd']['join']
@@ -59,32 +75,64 @@ if node['realmd-sssd']['join']
       'access_provider' => [ 'ad' ]
   }}.deep_merge!(node['realmd-sssd']['extra-config']), node['realmd-sssd']['config'])
 else
-  merged_config = Chef::Mixin::DeepMerge.deep_merge!(node['realmd-sssd']['extra-config'], node['realmd-sssd']['config'])
+  merged_config = Chef::Mixin::DeepMerge.
+    deep_merge!(node['realmd-sssd']['extra-config'], node['realmd-sssd']['config'])
 end
 
 if node['realmd-sssd']['join']
+
   bash "join #{realm_info['realm']} realm" do
     user 'root'
     code <<-EOT.gsub(/^\s+/, '').sub(/\n$/, '')
-    echo '#{realm_info['password']}' | realm join -v --unattended #{"--user-principal 'HOST/#{node['realmd-sssd']['host-spn']}'" unless node['realmd-sssd']['host-spn'].empty?} #{"--computer-ou '#{realm_info['computer-ou']}'" unless realm_info['computer-ou'].empty?} -U #{realm_info['username']} #{realm_info['realm']}
+    echo -n '#{realm_info['password']}' | realm join -v --unattended #{"--user-principal 'HOST/#{node['realmd-sssd']['host-spn']}@#{realm_info['realm']}'" unless node['realmd-sssd']['host-spn'].empty?} #{"--computer-ou '#{realm_info['computer-ou']}'" unless realm_info['computer-ou'].empty?} -U #{realm_info['username']} #{realm_info['realm']}
     EOT
     not_if "klist -k | grep -qi '@#{realm_info['realm']}'"
   end
 
-  if node['platform_family'] == 'debian'
-    template '/usr/share/pam-configs/mkhomedir' do
-      source 'mkhomedir.erb'
-      owner 'root'
-      group 'root'
-      mode '0644'
-      notifies :run, "execute[pam-auth-update]"
+  case node['platform_family']
+    when 'debian'
+      template '/usr/share/pam-configs/mkhomedir' do
+        source 'mkhomedir.erb'
+        owner 'root'
+        group 'root'
+        mode '0644'
+        notifies :run, 'execute[pam-auth-update]'
+      end
+      execute 'pam-auth-update' do
+        command 'pam-auth-update --package'
+        action :nothing
+      end
+    when 'fedora', 'rhel'
+      bash 'authconfig' do
+        user 'root'
+        code 'authconfig --enablesssd --enablesssdauth --enablemkhomedir --update'
+        not_if 'grep -q pam_oddjob_mkhomedir /etc/pam.d/*'
+      end
+
+      nsswitch = Chef::Util::FileEdit.new('/etc/nsswitch.conf')
+      sudoers_line = 'sudoers: files sss # managed by Chef'
+      ruby_block 'nssswitch' do
+        block do
+          Chef::Resource::RubyBlock.send(:include, Chef::Mixin::ShellOut)
+          nsswitch.write_file
+        end
+	      only_if {
+          nsswitch.search_file_replace_line(/sudoers(?!#{sudoers_line[/:.*/]}$)/, sudoers_line) || \
+            nsswitch.insert_line_if_no_match(/^sudoers: +files sss/, sudoers_line)
+        }
+      end
+  end
+
+  [ 'nss', 'pam', 'ssh', 'sudo' ].
+    each do |pipe|
+      bash "restart service[sssd] on missing #{pipe} pipe" do
+        code '/bin/true'
+        creates "/var/lib/sss/pipes/#{pipe}"
+        notifies :restart, 'service[sssd]'
+        notifies :restart, 'service[ssh]', :immediate if "#{pipe}" == 'ssh'
+      end
     end
 
-    execute 'pam-auth-update' do
-      command 'pam-auth-update --package'
-      action :nothing
-    end
-  end
 end
 
 template '/etc/sssd/sssd.conf' do
@@ -95,12 +143,11 @@ template '/etc/sssd/sssd.conf' do
   variables({
     :config => merged_config
   })
-  notifies :restart, 'service[sssd]', :immediate
+  notifies :restart, 'service[sssd]'
+  notifies :restart, 'service[ssh]', :delayed
 end
 
 service 'sssd' do
-  supports :status => true, :restart => true
+  supports :status => true
   action [:enable, :start]
 end
-
-# vim: set ts=2 sw=2 et ft=ruby:
