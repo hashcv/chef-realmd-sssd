@@ -108,6 +108,7 @@ For the purposes of integration testing, Chef Vault will fall back to reading pl
 Public SSH keys must be present via [`sshPublicKey`](https://github.com/jirutka/ssh-ldap-pubkey/blob/master/etc/openssh-lpk.schema) or another attribute in LDAP. The key must begin with the key-type prefix or a custom SSH `AuthorizedKeysCommand` must be specified (i.e. if querying the attribute returns "SSHKey: ssh-rsa AAAA..." instead of "ssh-rsa AAAA...").
 
 The [integration key](extras/integration-key.pub) must be present in the test user's LDAP public key attribute for the integration tests to succeed. For example:
+
 ```
 testuser@example.org@sssd-ubuntu14:~$ ldapsearch -LLL -H ldap://dc1.example.org -Y GSSAPI -b 'DC=example,DC=org' 'CN=Test User' altSecurityIdentities
 SASL/GSSAPI authentication started

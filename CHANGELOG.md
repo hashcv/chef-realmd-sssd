@@ -25,6 +25,7 @@
 # 0.1.0
 
 Initial fork of realmd-sssd from [localytics/chef-sssd](https://github.com/localytics/chef-sssd)
+
 - entirely code-driven sssd.conf template
 - programmatic hooks into configuring OpenSSH server
 - move to Chef Vault from encrypted data bags
