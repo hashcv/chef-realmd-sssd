@@ -8,9 +8,9 @@ source_url       'https://github.com/jbartko/chef-realmd-sssd' if respond_to?(:s
 issues_url       'https://github.com/jbartko/chef-realmd-sssd/issues' if respond_to?(:issues_url)
 version          '0.2.1'
 
-supports 'centos', '>= 7'
-supports 'debian', '>= 8'
-supports 'fedora', '>= 23'
+supports 'centos', '>= 7.0'
+supports 'debian', '>= 8.0'
+supports 'fedora'
 supports 'ubuntu', '>= 14.04'
 
 depends 'apt'
