@@ -1,4 +1,4 @@
-# feature/fix-supported-versions
+# 0.2.2
 
 - fix supported platform versions in metadata
 
