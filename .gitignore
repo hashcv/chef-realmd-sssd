@@ -20,10 +20,6 @@ bin/*
 .kitchen/
 .kitchen.local.*
 
-# Local test support files (like databags)
-test/integration/with-registration/data_bags
-test/integration/with-registration/encrypted_data_bag_secret_key
-
 # Eclipse
 .buildpath
 .project
