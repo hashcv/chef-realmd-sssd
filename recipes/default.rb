@@ -17,6 +17,7 @@
 # limitations under the License.
 #
 
+extend Chef::Util::Selinux
 chef_gem 'deep_merge' do
   compile_time true if respond_to?(:compile_time)
 end
@@ -24,7 +25,7 @@ end
 case node['platform_family']
 when 'debian'
   include_recipe 'apt'
-  # aptd/packagekit installs samba, but no Debian packages have the private dir
+  # no Debian packages provide the private dir
   directory '/var/lib/samba' do
     owner 'root'
     group 'root'
@@ -50,16 +51,38 @@ end
 
 if node['realmd-sssd']['join']
   require 'deep_merge'
+
+  if node['realmd-sssd']['password-auth']
+    node.default['openssh']['server']['password_authentication'] = 'yes'
+  elsif node['realmd-sssd']['ldap-key-auth']['enable']
+    match = {}
+    match.merge!({
+      "Address #{node['realmd-sssd']['ldap-key-auth']['cidr'].join(',')}" => {
+        'AuthorizedKeysCommand' => '/usr/bin/sss_ssh_authorizedkeys',
+        'AuthorizedKeysCommandUser' => 'nobody',
+        'PasswordAuthentication' => 'yes'
+      },
+      "Address *,#{node['realmd-sssd']['ldap-key-auth']['cidr'].
+        map { |whitelist| "!#{whitelist}" }.
+        join(',')}" => { 'password_authentication' => 'no' }
+    })
+    node.default['openssh']['server']['match'] = match
+  end
+
   include_recipe 'chef-vault'
   include_recipe 'openssh'
+
   begin
-    realm_info = chef_vault_item(node['realmd-sssd']['vault-name'],
-                                 node['realmd-sssd']['vault-item'])
+    realm_info = chef_vault_item_for_environment(node['realmd-sssd']['vault-name'],
+                                                 node['realmd-sssd']['vault-item'])
+    realm_info = realm_info.empty? ?
+      chef_vault_item(node['realmd-sssd']['vault-name'], node['realmd-sssd']['vault-item']) :
+      realm_info.select { |key| %w[computer-ou password realm username].include? key }
   rescue Exception => e
     Chef::Application.fatal!(e.to_s)
   end
 
-  merged_config = Chef::Mixin::DeepMerge.merge({
+  domain_config = {
     '[sssd]' => { 'domains' => [ realm_info['realm'] ]},
     "[domain/#{realm_info['realm']}]" => {
       'ad_domain' => [ realm_info['realm'] ],
@@ -73,13 +96,37 @@ if node['realmd-sssd']['join']
       'use_fully_qualified_names' => [ 'True' ],
       'fallback_homedir' => [ '/home/%d/%u' ],
       'access_provider' => [ 'ad' ]
-  }}.deep_merge!(node['realmd-sssd']['extra-config']), node['realmd-sssd']['config'])
+    }
+  }
+
+  merged_config = Chef::Mixin::DeepMerge.deep_merge(node['realmd-sssd']['extra-config'],
+    domain_config.deep_merge(node['realmd-sssd']['config']))
 else
-  merged_config = Chef::Mixin::DeepMerge.
-    deep_merge!(node['realmd-sssd']['extra-config'], node['realmd-sssd']['config'])
+  merged_config = Chef::Mixin::DeepMerge.deep_merge(node['realmd-sssd']['extra-config'], node['realmd-sssd']['config'])
 end
 
 if node['realmd-sssd']['join']
+
+  if selinux_enabled?
+    include_recipe 'selinux'
+    include_recipe 'selinux_policy::install'
+
+    selinux_policy_module 'sssd-samba-socket-create' do
+      content <<-eos
+        module sssd-samba-socket-create 1.0;
+
+        require {
+          type samba_net_t;
+          type samba_var_t;
+          class sock_file create;
+        }
+
+        #============= samba_net_t ==============
+        allow samba_net_t samba_var_t:sock_file create;
+      eos
+      action :deploy
+    end
+  end
 
   bash "join #{realm_info['realm']} realm" do
     user 'root'
@@ -123,15 +170,13 @@ if node['realmd-sssd']['join']
       end
   end
 
-  [ 'nss', 'pam', 'ssh', 'sudo' ].
-    each do |pipe|
-      bash "restart service[sssd] on missing #{pipe} pipe" do
-        code '/bin/true'
-        creates "/var/lib/sss/pipes/#{pipe}"
-        notifies :restart, 'service[sssd]'
-        notifies :restart, 'service[ssh]', :immediate if "#{pipe}" == 'ssh'
-      end
+  %w[nss pam ssh sudo].each do |pipe|
+    bash "restart service[sssd] on missing #{pipe} pipe" do
+      code '/bin/true'
+      creates "/var/lib/sss/pipes/#{pipe}"
+      notifies :restart, 'service[sssd]'
     end
+  end
 
 end
 
@@ -144,10 +189,9 @@ template '/etc/sssd/sssd.conf' do
     :config => merged_config
   })
   notifies :restart, 'service[sssd]'
-  notifies :restart, 'service[ssh]', :delayed
 end
 
 service 'sssd' do
-  supports :status => true
+  supports :status => true, :restart => true
   action [:enable, :start]
 end

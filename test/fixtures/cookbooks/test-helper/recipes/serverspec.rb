@@ -20,7 +20,8 @@ ruby_block "dump_node_attributes" do
   block do
     require 'json'
 
-    attrs = { 'ipaddress' => node['ipaddress'] }
+    attrs = { 'ipaddress' => node['ipaddress'],
+    'chef_environment' => node.chef_environment }
 
     attrs = attrs.deep_merge(node.default_attrs) unless node.default_attrs.empty?
     attrs = attrs.deep_merge(node.normal_attrs) unless node.normal_attrs.empty?

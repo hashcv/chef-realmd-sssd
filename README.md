@@ -31,19 +31,68 @@ An integrated realm furnished with the appropriate schema and attribute values p
 
 ## Usage
 
-### Default Recipe
+This cookbook relies on Chef Vault. Nodes will require at least one successful chef-client run before the Vault can be refreshed thus granting nodes access. This creates a chicken-or-egg scenario.
 
-Include `realmd-sssd` in your node's `run_list`:
+The widely-implemented organization base role/cookbook pattern helps with this situation. For details on how to implement this cookbook in a organization base role/cookbook, see the [Supplying Attributes](#supplying attributes) section.
+
+First, create a Chef Vault item with a search query for your organization's base cookbook or role:
+
+```bash
+knife vault create realmd-sssd realm -S 'recipe:organization-base OR role:organization-base'
+```
+
+Example Vault item content with optional per-environment data:
 
 ```json
 {
+  "id": "realm",
+  "realm": "example.org",
+  "username": "ad-join",
+  "password": "change42me",
+  "computer-ou": "OU=Linux-Hosts,DC=example,DC=org",
+  "prod-na": {
+    "realm": "na.example.org",
+    "username": "ad-join-na",
+    "password": "change4na2me",
+    "computer-ou": "OU=Linux-Hosts,DC=NA,DC=example,DC=com"
+  },
+  "prod-eu": {
+    "realm": "eu.example.org",
+    "username": "ad-join-eu",
+    "password": "change4eu2me",
+    "computer-ou": "OU=Linux-Hosts,DC=EU,DC=example,DC=com"
+  }
+}
+```
+
+*Note: any node not belonging to a specified environment will fall back to the global values.*
+
+Then, after nodes are created and bootstrapped with your organization's base cookbook/role, refresh the Vault:
+
+```bash
+knife vault refresh realmd-sssd realm
+```
+
+Finally, add `realmd-sssd` to your node's `run_list`:
+
+```json
+# with Chef role
+{
   "run_list": [
+    "role[organization-base]"
+    "recipe[realmd-sssd]"
+  ]
+}
+# with wrapper cookbook
+{
+  "run_list": [
+    "recipe[organization-base]"
     "recipe[realmd-sssd]"
   ]
 }
 ```
 
-### Attributes
+### Supplying Attributes
 
 The example Chef role default attributes below demonstrate how to add and override `sssd.conf` values via the `node['realmd-sssd']['extra-config']` attribute.
 
@@ -70,30 +119,77 @@ The example Chef role default attributes below demonstrate how to add and overri
 }
 
 ```
+
+If wrapper cookbooks are preferred to Chef roles, below is an example `organization-base::default` recipe snippet:
+
+```ruby
+node.default['realmd-sssd']['extra-config'] = {
+  '[domain/example.org]' =>  {
+    'access_provider' =>  'simple',
+    'ldap_sasl_mech' =>  'GSSAPI',
+    'ldap_user_extra_attrs' =>  'altSecurityIdentities:altSecurityIdentities',
+    'ldap_user_ssh_public_key' =>  'altSecurityIdentities',
+    'simple_allow_groups' =>  [
+      'Linux-Admins@example.org',
+      'Linux-Users@na.example.org'
+    ],
+    'realmd_tags' =>  'managed by Chef'
+  }
+}
+node.default['realmd-sssd']['join'] = true
+node.default['realmd-sssd']['ldap-key-auth'] = {
+  'enable' => true,
+  'cidr' => [ '::1/128', '192.0.2.0/24' ]
+}
+
+# do *not* include_recipe 'realmd-sssd' !
+```
+
+It's important to *not* include the `realmd-sssd::default` recipe in your organization's base role/cookbook due to the nature of Chef Vault. See the [Usage](#usage) section for details.
+
 ### Merge Behavior
+
 Note that values supplied in the the `extra-config` Hash will merge if data types allow, and overwrite if not. For example, when given a String: `"realmd_tags": "managed by chef"` the default realmd_tags will be replaced, but given an Array `"realmd_tags": [ "managed by chef" ]` the default realmd_tags are appended.
 
 ## Testing
 
-See .kitchen.yml and .kitchen.local.yml.EXAMPLE.
+See [.kitchen.yml](.kitchen.yml) and [.kitchen.local.yml.EXAMPLE](.kitchen.local.yml.EXAMPLE) for examples.
 
-To create a local data bag required by the Test Kitchen with-registration suite:
+First, create a `kitchen.local.yml`:
+
+```bash
+cp .kitchen.local.yml.EXAMPLE .kitchen.local.yml
+```
+
+Then create the local data bag required by the Test Kitchen with-registration suite:
 
 ```bash
 # Assuming ChefDK
 chef exec bundle install --with development
 knife solo data bag create realmd-sssd realm -c .chef/solo.rb
+```
 
-# example Chef Vault item content:
+Example Vault item with optional integration environment data for serverspec testing:
+
+```json
 {
   "id": "realm",
   "realm": "example.org",
   "username": "testuser",
-  "password": "<<REDACTED>>",
-  "computer-ou": "OU=Linux-Hosts,DC=example,DC=org"
+  "password": "change42me",
+  "computer-ou": "OU=Linux-Hosts,DC=example,DC=org",
+  "integration": {
+    "realm": "dev.example.org",
+    "username": "testdevuser",
+    "password": "change4dev2me",
+    "computer-ou": "OU=dev,OU=Linux-Hosts,DC=example,DC=com"
+  }
 }
+```
 
-# run integration tests
+Finally, run the serverspec tests:
+
+```bash
 kitchen test --destroy never
 ```
 
@@ -103,7 +199,7 @@ For the purposes of integration testing, Chef Vault will fall back to reading pl
 
 ## Integration
 
-### LDAP  SSH public keys
+### LDAP SSH public keys
 
 Public SSH keys must be present via [`sshPublicKey`](https://github.com/jirutka/ssh-ldap-pubkey/blob/master/etc/openssh-lpk.schema) or another attribute in LDAP. The key must begin with the key-type prefix or a custom SSH `AuthorizedKeysCommand` must be specified (i.e. if querying the attribute returns "SSHKey: ssh-rsa AAAA..." instead of "ssh-rsa AAAA...").
 
@@ -121,7 +217,7 @@ altSecurityIdentities: ecdsa-sha2-nistp521 AAAAE2VjZHNhLXNoYTItbmlzdHA1MjEAAAA
  Q2x/8+k4TummCCR37vTnmsdB+BljdQFOOrq7FXJjaAQrHqIXDc/B2X5HIWveG6KbOnPluSLdenrrz
  m1CpZn5WHS2HePyS1+2OEalX+JZsStCVwZKlVTHJw== Test Kitchen realmd-sssd integrat
  ion key
- ```
+```
 
 ### LDAP sudoers
 
