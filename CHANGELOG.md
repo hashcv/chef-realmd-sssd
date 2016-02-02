@@ -1,3 +1,9 @@
+# feature/better-attrs
+
+- better attribute handling
+- add per-environment Vault data
+- support SELinux-enabled operating systems (Thanks [Nitzan Raz](https://github.com/BackSlasher))
+
 # 0.2.2
 
 - fix supported platform versions in metadata
