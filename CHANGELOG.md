@@ -1,4 +1,7 @@
-# feature/better-attrs
+# develop
+
+- gitignore fixup
+- better documentation
 
 - better attribute handling
 - add per-environment Vault data
