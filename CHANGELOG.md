@@ -1,11 +1,10 @@
-# develop
+# 0.2.3
 
-- gitignore fixup
 - better documentation
-
 - better attribute handling
 - add per-environment Vault data
 - support SELinux-enabled operating systems (Thanks [Nitzan Raz](https://github.com/BackSlasher))
+- gitignore fixup
 
 # 0.2.2
 
