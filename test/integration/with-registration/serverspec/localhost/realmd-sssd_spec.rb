@@ -65,13 +65,13 @@ describe command("/usr/bin/sudo -U #{$realm_info['username']}@#{$realm_info['rea
 end
 
 # Verify LDAP/Kerberos password authentication
-ENV['SSHPASS'] = $realm_info['password']
-describe command("fail_count=0; while ! sshpass -e ssh -v -o StrictHostKeyChecking=no -o PubKeyAuthentication=no -l #{$realm_info['username']}@#{$realm_info['realm']} localhost 2>&1 -- /bin/true; do sleep 5; fail_count=$(expr $fail_count + 1); if [ $fail_count -gt 5 ]; then exit 1; fi; done") do
+ENV['SSHPASS'] = "#{$realm_info['password']}"
+describe command("fail_count=0; while ! sshpass -e ssh -v -o StrictHostKeyChecking=no -o PubKeyAuthentication=no -l #{$realm_info['username']}@#{$realm_info['realm']} ::1 2>&1 -- /bin/true; do sleep 5; fail_count=$(expr $fail_count + 1); if [ $fail_count -gt 5 ]; then exit 1; fi; done") do
   its(:exit_status) { should eq 0 }
 end
 
 # Verify LDAP SSH public key integration
-describe command("ssh -v -o StrictHostKeyChecking=no -o PasswordAuthentication=no -i /root/integration-key -l #{$realm_info['username']}@#{$realm_info['realm']} localhost 2>&1 -- /bin/true") do
+describe command("ssh -v -o StrictHostKeyChecking=no -o PasswordAuthentication=no -i /root/integration-key -l #{$realm_info['username']}@#{$realm_info['realm']} ::1 2>&1 -- /bin/true") do
   its(:exit_status) { should eq 0 }
 end
 

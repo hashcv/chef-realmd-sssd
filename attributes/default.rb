@@ -10,7 +10,8 @@ when 'debian'
     default['realmd-sssd']['packages'].push('packagekit')
   end
 when 'rhel'
-  default['realmd-sssd']['packages'].push('krb5-workstation')
+  default['realmd-sssd']['packages'].
+    push(['krb5-workstation', 'openssh-server >= 6.5.0']).flatten!
 when 'fedora'
   default['realmd-sssd']['packages'].
     push(['krb5-workstation', 'polkit', 'PackageKit', 'crypto-policies >= 20151104']).
@@ -20,27 +21,6 @@ end
 default['realmd-sssd']['password-auth'] = false
 default['realmd-sssd']['ldap-key-auth']['enable'] = false
 default['realmd-sssd']['ldap-key-auth']['cidr'] = []
-
-if node['realmd-sssd']['password-auth']
-  force_default['openssh']['server']['password_authentication'] = 'yes'
-elsif node['realmd-sssd']['ldap-key-auth']['enable']
-  match = {}
-  node['realmd-sssd']['ldap-key-auth']['cidr'].each do |network|
-    match.merge!({
-      "Address #{network}" => {
-        'password_authentication' => 'yes',
-        'AuthorizedKeysCommand' => '/usr/bin/sss_ssh_authorizedkeys',
-	'AuthorizedKeysCommandUser' => 'nobody'
-      }
-    })
-  end
-  match.merge!({
-    "Address *,#{node['realmd-sssd']['ldap-key-auth']['cidr'].
-      map { |whitelist| "!#{whitelist}" }.
-      join(',')}" => { 'password_authentication' => 'no' }
-  })
-  force_default['openssh']['server']['match'] = match
-end
 
 default['realmd-sssd']['config'] = {
   '[sssd]' => {
