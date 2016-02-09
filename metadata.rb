@@ -6,7 +6,7 @@ description      'Joins a realm via realmd and configures SSSD'
 long_description  IO.read(File.join(File.dirname(__FILE__), 'README.md'))
 source_url       'https://github.com/jbartko/chef-realmd-sssd' if respond_to?(:source_url)
 issues_url       'https://github.com/jbartko/chef-realmd-sssd/issues' if respond_to?(:issues_url)
-version          '0.2.3'
+version          '0.2.4'
 
 supports 'centos', '>= 7.0'
 supports 'debian', '>= 8.0'

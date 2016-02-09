@@ -1,3 +1,7 @@
+# 0.2.4
+
+- serverspec now leverages shared examples between suites
+
 # 0.2.3
 
 - better documentation
