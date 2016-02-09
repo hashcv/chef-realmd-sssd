@@ -153,15 +153,15 @@ Note that values supplied in the the `extra-config` Hash will merge if data type
 
 ## Testing
 
-See [.kitchen.yml](.kitchen.yml) and [.kitchen.local.yml.EXAMPLE](.kitchen.local.yml.EXAMPLE) for examples.
+See [.kitchen.yml](.kitchen.yml) and .kitchen.`driver`.yml ([openstack](.kitchen.openstack.yml), [vagrant](.kitchen.vagrant.yml)) for examples.
 
 First, create a `kitchen.local.yml`:
 
 ```bash
-cp .kitchen.local.yml.EXAMPLE .kitchen.local.yml
+cp .kitchen.vagrant.yml .kitchen.local.yml
 ```
 
-Then create the local data bag required by the Test Kitchen with-registration suite:
+Then create the local data bag required by the Test Kitchen join-realm suite:
 
 ```bash
 # Assuming ChefDK

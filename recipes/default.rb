@@ -36,20 +36,19 @@ when 'debian'
     group 'root'
     mode '0700'
   end
-when 'fedora'
+when %r{fedora|rhel}
   include_recipe 'yum'
-  include_recipe 'yum::dnf_yum_compat'
-when 'rhel'
-  include_recipe 'yum'
+  include_recipe 'yum::dnf_yum_compat' if platform_family?('fedora')
 end
 
-node['realmd-sssd']['packages'].each do |pkg|
-  package pkg do
-    provider Chef::Provider::Package::Yum if node.platform_family?('fedora')
-  end
-end
+package 'sssd'
 
 if node['realmd-sssd']['join']
+  node['realmd-sssd']['packages'].each do |pkg|
+    package pkg do
+      provider Chef::Provider::Package::Yum if node.platform_family?('fedora')
+    end
+  end
   require 'deep_merge'
 
   if node['realmd-sssd']['password-auth']
@@ -134,6 +133,7 @@ if node['realmd-sssd']['join']
     echo -n '#{realm_info['password']}' | realm join -v --unattended #{"--user-principal 'HOST/#{node['realmd-sssd']['host-spn']}@#{realm_info['realm']}'" unless node['realmd-sssd']['host-spn'].empty?} #{"--computer-ou '#{realm_info['computer-ou']}'" unless realm_info['computer-ou'].empty?} -U #{realm_info['username']} #{realm_info['realm']}
     EOT
     not_if "klist -k | grep -qi '@#{realm_info['realm']}'"
+    notifies :create, 'template[/etc/sssd/sssd.conf]', :immediately
   end
 
   case node['platform_family']
@@ -188,7 +188,7 @@ template '/etc/sssd/sssd.conf' do
   variables({
     :config => merged_config
   })
-  notifies :restart, 'service[sssd]'
+  notifies :restart, 'service[sssd]', :immediately
 end
 
 service 'sssd' do

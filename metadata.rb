@@ -15,7 +15,6 @@ supports 'ubuntu', '>= 14.04'
 
 depends 'apt'
 depends 'chef-vault'
-depends 'hostname'
 depends 'openssh', '~> 1.6.0'
 depends 'selinux'
 depends 'selinux_policy', '~> 0.9.3'

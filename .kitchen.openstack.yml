@@ -1,0 +1,138 @@
+# Specify at least one nameserver for the realm being tested against. If SUTs
+# are to register dynamic DNS resource records under a subdomain other than the
+# realm name, define an  optional dns_domain_name. All other realm information
+# will be sourced from the solo data bag.
+#
+# Be sure SUTs can access DNS, LDAP, and Kerberos services.
+
+<%
+require 'json'
+data_bag_file = 'test/fixtures/data_bags/realmd-sssd/realm.json'
+data_bag = ::JSON.parse(File.read(data_bag_file))
+
+# Recommended - at least one realm DNS server
+realm_nameservers = [ ]
+# Recommended - group for access testing, defaults to 'domain users'
+auth_group_acl = [ ]
+# Optional - IP addresses or CIDR blocks from which to allow SSH
+auth_ip_acl = [ ]
+# Optional - enable environment for chef_vault_item_for_environment testing
+chef_environment = nil
+# Optional - set SPN for a DNS domain name other than the realm name
+dns_domain_name = nil
+
+# change these
+my_os_keypair = nil
+my_private_key = '/full/path/to/key'
+os_flavor = nil
+os_net_name = 'c4ff15f6-b2b5-4f34-975f-2c0d9119d5c3'
+os_secgroups = 'default'
+os_floating_pool = 'floating-ip-net'
+os_centos_img = '0925eddb-0e3c-4a73-808a-861274b847a7'
+os_debian_img = 'f0933ffe-0af6-4f8f-8768-2afcb27eaf57'
+os_fedora_img = '53c97d7c-0b5e-481c-8997-543ff6c22818'
+os_ubuntu_img = '1362f3b4-08d8-4c2e-8e86-1eb65747123e'
+
+# rsync or sftp
+kitchen_sync_transport = 'rsync'
+
+os_user = ENV['OS_USERNAME']
+os_api_key = ENV['OS_PASSWORD']
+os_tenant = ENV['OS_TENANT_NAME']
+os_project = ENV['OS_TENANT_NAME']
+os_auth_url = "#{ENV['OS_AUTH_URL']}/tokens"
+
+realm_info = data_bag[chef_environment].nil? ?
+  data_bag :
+  data_bag[chef_environment]
+%>
+---
+driver:
+  name: openstack
+  flavor_ref: '<%= os_flavor %>'
+  openstack_username: '<%= os_user %>'
+  openstack_api_key: '<%= os_api_key %>'
+  openstack_auth_url: '<%= os_auth_url %>'
+  openstack_tenant: '<%= os_tenant %>'
+  key_name: '<%= my_os_keypair %>'
+  network_ref: '<%= os_net_name %>'
+  security_groups: '<%= os_secgroups %>'
+  floating_ip_pool: '<%= os_floating_pool %>'
+  openstack_project_name: '<%= os_project %>'
+  private_key_path: '<%= my_private_key %>'
+
+transport:
+  name: <%= kitchen_sync_transport %>
+  ssh_key: '<%= my_private_key %>'
+
+provisioner:
+  <% unless chef_environment.nil? %>
+  client_rb:
+    environment: <%= chef_environment %>
+  <% end %>
+  data_bags_path: 'test/fixtures/data_bags'
+  environments_path: 'test/fixtures/environments'
+
+platforms:
+  - name: centos-7.2
+    driver_config:
+      server_name: 'sssd-centos7.<%= dns_domain_name || realm_info['realm'] %>'
+      image_ref: '<%= os_centos_img %>'
+    attributes:
+      realmd-sssd:
+        host-spn: 'sssd-centos7.<%= dns_domain_name || realm_info['realm'] %>'
+  - name: debian-8.2
+    driver_config:
+      server_name: 'sssd-debian8.<%= dns_domain_name || realm_info['realm'] %>'
+      image_ref: '<%= os_debian_img %>'
+    attributes:
+      realmd-sssd:
+        host-spn: 'sssd-debian8.<%= dns_domain_name || realm_info['realm'] %>'
+  - name: fedora-23
+    driver_config:
+      server_name: 'sssd-fc23.<%= dns_domain_name || realm_info['realm'] %>'
+      image_ref: '<%= os_fedora_img %>'
+    transport:
+      username: 'fedora'
+    attributes:
+      realmd-sssd:
+        host-spn: 'sssd-fc23.<%= dns_domain_name || realm_info['realm'] %>'
+  - name: ubuntu-14.04
+    driver_config:
+      image_ref: '<%= os_ubuntu_img %>'
+      server_name: 'sssd-ubuntu14.<%= dns_domain_name || realm_info['realm'] %>'
+    attributes:
+      realmd-sssd:
+        host-spn: 'sssd-ubuntu14.<%= dns_domain_name || realm_info['realm'] %>'
+
+suites:
+  - name: join-realm
+    run_list:
+      - recipe[realmd-sssd-tester]
+      <% unless realm_nameservers.to_s.empty? %>
+      - recipe[resolver]
+      <% end %>
+      - recipe[os_floating_lo]
+      - recipe[realmd-sssd]
+      - recipe[export_node]
+    attributes:
+      <% unless realm_nameservers.to_s.empty? %>
+      resolver:
+        nameservers: <%= realm_nameservers %>
+        search: <%= realm_info['realm'] %>
+      <% end %>
+      realmd-sssd:
+        join: 'true'
+        extra-config:
+          '[domain/<%= realm_info['realm'] %>]':
+            dyndns_iface: 'lo:0'
+            access_provider: 'simple'
+            simple_allow_groups: <%= auth_group_acl.empty? ? "domain users@#{realm_info['realm']}" : auth_group_acl %>
+            realmd_tags: [ 'Test Kitchen system under test' ]
+            fallback_homedir: '/home/%d/%u'
+            ldap_sasl_mech: 'GSSAPI'
+            ldap_user_extra_attrs: 'altSecurityIdentities:altSecurityIdentities'
+            ldap_user_ssh_public_key: 'altSecurityIdentities'
+        ldap-key-auth:
+          cidr: <%= auth_ip_acl.push('::1/128') %>
+          enable: true
