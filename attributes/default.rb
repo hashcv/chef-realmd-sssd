@@ -1,7 +1,7 @@
 default['realmd-sssd']['join'] = false
 default['realmd-sssd']['host-spn'] = node.attribute?('fqdn') ? node['fqdn'] : node['machinename']
 
-default['realmd-sssd']['packages'] = [ 'realmd', 'sssd' ]
+default['realmd-sssd']['packages'] = [ 'realmd' ]
 case node['platform_family']
 when 'debian'
   default['realmd-sssd']['debian-mkhomedir-umask'] = '0022'
@@ -10,12 +10,13 @@ when 'debian'
     default['realmd-sssd']['packages'].push('packagekit')
   end
 when 'rhel'
-  default['realmd-sssd']['packages'].
-    push(['krb5-workstation', 'openssh-server >= 6.5.0']).flatten!
+  default['realmd-sssd']['packages'].push('krb5-workstation')
 when 'fedora'
-  default['realmd-sssd']['packages'].
-    push(['krb5-workstation', 'polkit', 'PackageKit', 'crypto-policies >= 20151104']).
-    flatten!
+  default['realmd-sssd']['packages'].push(['krb5-workstation', 'polkit',
+    'PackageKit', 'samba-common-tools']).flatten!
+  if node['platform_version'].to_f >= 23
+    default['realmd-sssd']['packages'].push('crypto-policies >= 20151104-1.gitf1cba5f')
+  end
 end
 
 default['realmd-sssd']['password-auth'] = false
