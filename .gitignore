@@ -17,8 +17,10 @@ Gemfile.lock
 bin/*
 .bundle/*
 
+# Test-Kitchen
+.kitchen
 .kitchen/
-.kitchen.local.*
+.kitchen.local.yml
 
 # Eclipse
 .buildpath

@@ -1,19 +1,22 @@
 ---
 driver:
-  name: <%= ENV['KITCHEN_DRIVER'] || 'vagrant' %>
+  name: vagrant
 
 provisioner:
   name: chef_zero
 
 platforms:
+  - name: centos-6.7
   - name: centos-7.2
+  - name: debian-7.9
   - name: debian-8.2
+  - name: fedora-22
   - name: fedora-23
   - name: ubuntu-14.04
+  - name: ubuntu-15.04
 
-# For testing joining the domain, see .kitchen.local.yml.EXAMPLE
+# to test joining the domain, see .kitchen.<driver>.yml
 suites:
   - name: default
     run_list:
       - recipe[realmd-sssd]
-      - recipe[test-helper::serverspec]
