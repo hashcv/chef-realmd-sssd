@@ -9,7 +9,8 @@ cookbook 'selinux', git: 'https://github.com/jbartko/selinux.git', branch: 'feat
 cookbook 'selinux_policy', '~> 0.9.3'
 cookbook 'yum', '~> 3.9.0'
 group :integration do
-  cookbook 'hostname'
-  cookbook 'test-helper', path: 'test/fixtures/cookbooks/test-helper'
+  cookbook 'export_node', path: 'test/fixtures/cookbooks/export_node'
+  cookbook 'os_floating_lo', '~> 0.1.2'
+  cookbook 'realmd-sssd-tester', path: 'test/fixtures/cookbooks/realmd-sssd-tester'
   cookbook 'resolver'
 end
