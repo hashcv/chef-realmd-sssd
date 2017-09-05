@@ -68,24 +68,24 @@ if node['realmd-sssd']['join']
     node.default['openssh']['server']['match'] = match
   end
 
-  include_recipe 'chef-vault'
+#  include_recipe 'chef-vault'
   include_recipe 'openssh'
 
-  begin
-    realm_info = chef_vault_item_for_environment(node['realmd-sssd']['vault-name'],
-                                                 node['realmd-sssd']['vault-item'])
-    realm_info = realm_info.empty? ?
-      chef_vault_item(node['realmd-sssd']['vault-name'], node['realmd-sssd']['vault-item']) :
-      realm_info.select { |key| %w[computer-ou password realm username].include? key }
-  rescue Exception => e
-    Chef::Application.fatal!(e.to_s)
-  end
+#   begin
+#     realm_info = chef_vault_item_for_environment(node['realmd-sssd']['vault-name'],
+#                                                  node['realmd-sssd']['vault-item'])
+#     realm_info = realm_info.empty? ?
+#       chef_vault_item(node['realmd-sssd']['vault-name'], node['realmd-sssd']['vault-item']) :
+#       realm_info.select { |key| %w[computer-ou password realm username].include? key }
+#   rescue Exception => e
+#     Chef::Application.fatal!(e.to_s)
+#   end
 
   domain_config = {
-    '[sssd]' => { 'domains' => [ realm_info['realm'] ]},
-    "[domain/#{realm_info['realm']}]" => {
-      'ad_domain' => [ realm_info['realm'] ],
-      'krb5_realm' => [ realm_info['realm'].upcase ],
+    '[sssd]' => { 'domains' => [ node['realmd-sssd']['realm'] ]},
+    "[domain/#{node['realmd-sssd']['realm']}]" => {
+      'ad_domain' => [ node['realmd-sssd']['realm'] ],
+      'krb5_realm' => [ node['realmd-sssd']['realm'].upcase ],
       'realmd_tags' => [ 'manages-system joined-with-samba'],
       'cache_credentials' => [ 'True' ],
       'id_provider' => [ 'ad' ],
@@ -127,12 +127,12 @@ if node['realmd-sssd']['join']
     end
   end
 
-  bash "join #{realm_info['realm']} realm" do
+  bash "join #{realmd-sssd']['realm']} realm" do
     user 'root'
     code <<-EOT.gsub(/^\s+/, '').sub(/\n$/, '')
-    echo -n '#{realm_info['password']}' | realm join -v --unattended #{"--user-principal 'HOST/#{node['realmd-sssd']['host-spn']}@#{realm_info['realm']}'" unless node['realmd-sssd']['host-spn'].empty?} #{"--computer-ou '#{realm_info['computer-ou']}'" unless realm_info['computer-ou'].empty?} -U #{realm_info['username']} #{realm_info['realm']}
+    echo -n '#{node['realmd-sssd']['password']}' | realm join -v --unattended #{"--user-principal 'HOST/#{node['realmd-sssd']['host-spn']}@#{node['realmd-sssd']['realm']}'" unless node['realmd-sssd']['host-spn'].empty?} #{"--computer-ou '#{node['realmd-sssd']['computer-ou']}'" unless node['realmd-sssd']['computer-ou'].empty?} -U #{node['realmd-sssd']['username']} #{node['realmd-sssd']['realm']}
     EOT
-    not_if "klist -k | grep -qi '@#{realm_info['realm']}'"
+    not_if "klist -k | grep -qi '@#{node['realmd-sssd']['realm']}'"
     notifies :create, 'template[/etc/sssd/sssd.conf]', :immediately
   end
 
